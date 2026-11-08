@@ -1,0 +1,9 @@
+#!/bin/sh
+# Build + install the device-tree overlay alongside the module.
+cd "$(dirname "$0")"
+dtc -Wno-unit_address_vs_reg -@ -I dts -O dtb -o imx06a.dtbo imx06a-overlay.dts
+if [ -d /boot/firmware/overlays ]; then
+	install -m 644 imx06a.dtbo /boot/firmware/overlays/
+else
+	install -m 644 imx06a.dtbo /boot/overlays/
+fi

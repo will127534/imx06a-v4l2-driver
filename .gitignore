@@ -1,0 +1,19 @@
+# kernel build artefacts
+*.o
+*.ko
+*.ko.xz
+*.mod
+*.mod.c
+.*.cmd
+Module.symvers
+modules.order
+.tmp_versions/
+*.dtbo
+# python
+__pycache__/
+*.pyc
+
+# local bring-up tools, notes and table generator (not tracked)
+tools/
+notes/
+gen_tables.py

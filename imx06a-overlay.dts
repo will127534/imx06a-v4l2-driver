@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Device Tree overlay for the Sony IMX06A camera module.
+//
+// Defaults to CAM1; pass ",cam0" to target the CAM0 connector, e.g.
+//   dtoverlay=imx06a,cam0
+/dts-v1/;
+/plugin/;
+
+/{
+	compatible = "brcm,bcm2835";
+
+	reg_frag: fragment@2 {
+		target = <&cam1_reg>;
+		__overlay__ {
+			startup-delay-us = <300000>;
+		};
+	};
+
+	reg_alwayson_frag: fragment@99 {
+		target = <&cam1_reg>;
+		__dormant__ {
+			regulator-always-on;
+		};
+	};
+
+	i2c_frag: fragment@100 {
+		target = <&i2c_csi_dsi>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			cam_node: imx06a@1a {
+				compatible = "sony,imx06a";
+				reg = <0x1a>;
+				clocks = <&cam1_clk>;
+				clock-names = "xclk";
+
+				vana-supply = <&cam1_reg>;	/* 2.9 V / 1.8 V analog */
+				vdig-supply = <&cam_dummy_reg>;	/* 0.83 V (on-module) */
+				vif-supply  = <&cam_dummy_reg>;	/* 1.8 V (on-module) */
+
+				rotation = <0>;
+				orientation = <2>;
+
+				port {
+					cam_endpoint: endpoint {
+						remote-endpoint = <&csi_ep>;
+						clock-lanes = <0>;
+						data-lanes = <1 2 3 4>;
+						clock-noncontinuous;
+						/*
+						 * DDR link frequency (Hz) = lane rate / 2.
+						 * Override with "link-frequency=<Hz>": any
+						 * value, rounded by the driver to the nearest
+						 * exact PLL rate (12 Mbps grid with a 24 MHz
+						 * module clock). Default 876000000 = 1752 Mbps,
+						 * with margin below 2112 Mbps (link-frequency=MAX),
+						 * the highest rate measured error-free on the RP1.
+						 */
+						link-frequencies = /bits/ 64 <876000000>;
+					};
+				};
+			};
+		};
+	};
+
+	csi_frag: fragment@101 {
+		target = <&csi1>;
+		csi: __overlay__ {
+			status = "okay";
+			brcm,media-controller;
+
+			port {
+				csi_ep: endpoint {
+					remote-endpoint = <&cam_endpoint>;
+					clock-lanes = <0>;
+					data-lanes = <1 2 3 4>;
+					clock-noncontinuous;
+				};
+			};
+		};
+	};
+
+	fragment@102 {
+		target = <&i2c0if>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	clk_frag: fragment@103 {
+		target = <&cam1_clk>;
+		cam_clk: __overlay__ {
+			status = "okay";
+			clock-frequency = <24000000>;	/* module oscillator */
+		};
+	};
+
+	fragment@104 {
+		target = <&i2c0mux>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	__overrides__ {
+		rotation    = <&cam_node>,"rotation:0";
+		orientation = <&cam_node>,"orientation:0";
+		media-controller = <&csi>,"brcm,media-controller?";
+		/* keep the sensor rail on (regulator-always-on: only honoured
+		 * when set at boot, i.e. from config.txt) */
+		always-on = <0>,"+99";
+		clock-frequency = <&cam_clk>,"clock-frequency:0";
+		/* default HDR family: 0 off, 1 DCG-HDR, 2 QBC-HDR (runtime: "HDR Mode" control) */
+		hdr = <&cam_node>,"sony,hdr-mode:0";
+		/*
+		 * Boot lane rate: a link frequency in Hz (= Mbps / 2, rounded to the
+		 * nearest exact PLL rate) or a preset name: MAX, DCI60P, DCI50P,
+		 * DCI30P, UHD60P, UHD50P, UHD30P. e.g. dtoverlay=imx06a,link-frequency=DCI60P
+		 */
+		link-frequency = <&cam_node>,"sony,link-frequency";
+		/* expose the phase-detect output on a 2nd pad (VC0 / DT 0x30) */
+		pdaf = <&cam_node>,"sony,pdaf?";
+		/* sync outputs ("GPO Output" / "TESTOUT Output" controls):
+		 * 0 off, 1 exposure strobe, 2 V sync pulse, 3 H sync pulse */
+		gpo = <&cam_node>,"sony,gpo:0";
+		testout = <&cam_node>,"sony,testout:0";
+		cam0 = <&i2c_frag>, "target:0=",<&i2c_csi_dsi0>,
+		       <&csi_frag>, "target:0=",<&csi0>,
+		       <&clk_frag>, "target:0=",<&cam0_clk>,
+		       <&cam_node>, "clocks:0=",<&cam0_clk>,
+		       <&reg_frag>, "target:0=",<&cam0_reg>,
+		       <&reg_alwayson_frag>, "target:0=",<&cam0_reg>,
+		       <&cam_node>, "vana-supply:0=",<&cam0_reg>;
+	};
+};
