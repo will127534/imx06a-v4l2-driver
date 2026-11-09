@@ -1,5 +1,7 @@
 # Sony IMX06A V4L2 driver (Raspberry Pi 5)
 
+<img width="3000" height="2000" alt="_DSC4677" src="https://github.com/user-attachments/assets/0f3b807b-98bc-437e-bb7f-1b4425ac1e52" />
+<img width="3000" height="2000" alt="_DSC4656" src="https://github.com/user-attachments/assets/64c45c33-62cc-4789-9331-59b4217fa119" />
 Driver for the Sony **IMX06A-AJ1R-J**: 50.3 MP (8192×6144), Type 1/0.98, 1.6 µm,
 stacked BSI, Quad-Bayer colour filter with on-chip QBC remosaic, CCS/SMIA++-style
 register map. 4-lane MIPI D-PHY.
