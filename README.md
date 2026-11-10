@@ -222,7 +222,8 @@ corrupts real images.
 ## Phase-detect (PD) output
 
 Every pixel is a dual photodiode ("Dual PD"). With `pdaf` set, the sensor also
-sends its phase data and the driver exposes it for an external focus system:
+sends its phase data and the driver exposes it for autofocus (libcamera, see
+below) or an external focus system:
 
 ```
 dtoverlay=imx06a,pdaf          # or: modprobe imx06a pdaf=1
@@ -284,6 +285,13 @@ dtoverlay=imx06a,pdaf          # or: modprobe imx06a pdaf=1
   load the module with `pd_standin=1` to advertise the CFE's default 16384 × 1
   instead (the receiver then stores DT 0x30 data up to the meta buffer size its
   consumer sets), or load without `pdaf`.
+* **Autofocus**: the `imx06a-pdaf` branch of the libcamera fork turns the PD
+  stream into a phase grid for `rpi.af` (host-side L/R correlation). With a lens
+  controller on the camera I2C bus (overlay `vcm`: Pinefeat CEF168 Canon
+  EF/EF-S controller at 0x0d, driver from github.com/pinefeat/cef168),
+  `rpicam-still --autofocus-mode auto`/`continuous` focuses by PDAF:
+  `dtoverlay=imx06a,pdaf,vcm`. Full-res RAW12 (sparse PD) falls back to
+  contrast AF.
 * **Reading it**: capture the image node (`rp1-cfe-csi2_ch0`) and the embedded node
   together, with the embedded node's meta buffer set to the PD size above, then split
   the RAW10 rows into the L and R planes.
@@ -382,7 +390,9 @@ camera rail on; `regulator-always-on` is only honoured at boot, so put it in
 config.txt and reboot),
 `clock-frequency` (module oscillator, default 24000000), `hdr` (default HDR family),
 `link-frequency` (preset name or Hz, see Link speed), `pdaf` (PD output pad),
-`gpo` / `testout` (sync output defaults 0-3, see Sync / strobe output).
+`gpo` / `testout` (sync output defaults 0-3, see Sync / strobe output),
+`vcm` (Pinefeat CEF168 lens controller at 0x0d, linked as the sensor's
+`lens-focus`; needs the cef168 driver).
 
 libcamera support (cam helper, sensor properties, `imx06a.json` PiSP tuning)
 lives in the `will127534/libcamera` fork. The tuning is **provisional**: it is

@@ -62,6 +62,20 @@
 					};
 				};
 			};
+
+			/* Pinefeat CEF168 Canon EF/EF-S lens controller ("vcm") */
+			vcm_node: cef168@d {
+				compatible = "pinefeat,cef168";
+				reg = <0x0d>;
+				status = "disabled";
+			};
+		};
+	};
+
+	lens_frag: fragment@105 {
+		target = <&cam_node>;
+		__dormant__ {
+			lens-focus = <&vcm_node>;
 		};
 	};
 
@@ -126,6 +140,8 @@
 		 * 0 off, 1 exposure strobe, 2 V sync pulse, 3 H sync pulse */
 		gpo = <&cam_node>,"sony,gpo:0";
 		testout = <&cam_node>,"sony,testout:0";
+		/* Pinefeat CEF168 EF/EF-S lens controller at 0x0d (focus + iris) */
+		vcm = <&vcm_node>,"status", <0>,"=105";
 		cam0 = <&i2c_frag>, "target:0=",<&i2c_csi_dsi0>,
 		       <&csi_frag>, "target:0=",<&csi0>,
 		       <&clk_frag>, "target:0=",<&cam0_clk>,
