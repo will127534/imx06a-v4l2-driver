@@ -185,13 +185,15 @@
 #define IMX06A_PD_SPARSE_Y0		64U	/* array rows carrying sparse PD */
 #define IMX06A_PD_SPARSE_Y1		6080U
 /*
- * The PD pad is advertised at the RP1 CFE's default embedded size in every
- * mode, not at the true PD size: the sensor-to-CSI-2 link is immutable and
- * validated at every stream start, and libcamera never sets the CSI-2 metadata
- * pads, so a per-mode size would break every libcamera stream. The receiver
- * stores whatever DT 0x30 data arrives, up to the buffer size its consumer sets.
+ * The PD pad reports the true PD size of the mode: width = bytes per packet,
+ * height = packets per frame. The sensor-to-CSI-2 link is immutable and is
+ * validated at every stream start, so the consumer must set the CSI-2 metadata
+ * pads to match (libcamera does when its sensor helper uses the PD data). For
+ * a libcamera without PD support, "pd_standin" advertises the RP1 CFE's default
+ * embedded size instead; the receiver then stores whatever DT 0x30 data
+ * arrives, up to the buffer size its consumer sets.
  */
-#define IMX06A_PD_PAD_WIDTH		16384U
+#define IMX06A_PD_STANDIN_WIDTH		16384U
 
 #define IMX06A_CSI2_VC_MASK		0x03
 #define IMX06A_CSI2_DT_MASK		0x3f
@@ -542,6 +544,10 @@ static bool pdaf;
 module_param(pdaf, bool, 0444);
 MODULE_PARM_DESC(pdaf, "Expose the phase-detect output on a second pad (all devices)");
 
+static bool pd_standin;
+module_param(pd_standin, bool, 0444);
+MODULE_PARM_DESC(pd_standin, "Advertise the PD pad at 16384x1 (libcamera without PD support)");
+
 /* Bring-up: report a different packet type on the PD pad (0x12 = embedded data). */
 static uint pd_dt = IMX06A_PD_DT;
 module_param(pd_dt, uint, 0644);
@@ -718,30 +724,6 @@ static void imx06a_fill_fmt(const struct imx06a *imx06a,
 	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
 }
 
-static void imx06a_fill_pd_fmt(struct v4l2_mbus_framefmt *fmt)
-{
-	fmt->code = MEDIA_BUS_FMT_SENSOR_DATA;
-	fmt->width = IMX06A_PD_PAD_WIDTH;
-	fmt->height = 1;
-	fmt->field = V4L2_FIELD_NONE;
-	fmt->colorspace = V4L2_COLORSPACE_RAW;
-	fmt->ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
-	fmt->quantization = V4L2_QUANTIZATION_DEFAULT;
-	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
-}
-
-/* Point a pad state at a mode: image format and crop, and the PD pad if any. */
-static void imx06a_state_set_mode(const struct imx06a *imx06a,
-				  struct v4l2_subdev_state *state,
-				  const struct imx06a_mode *mode)
-{
-	imx06a_fill_fmt(imx06a, mode,
-			v4l2_subdev_state_get_format(state, IMX06A_PAD_IMAGE));
-	*v4l2_subdev_state_get_crop(state, IMX06A_PAD_IMAGE) = imx06a_mode_crop(mode);
-	if (imx06a->pdaf)
-		imx06a_fill_pd_fmt(v4l2_subdev_state_get_format(state, IMX06A_PAD_PD));
-}
-
 /*
  * PD stream geometry per mode (RAW10 on VC0 / DT 0x30):
  *  - all-pixel PD (every mode but full-res AD12; PHASE_PIX = 1): one packet per
@@ -774,6 +756,35 @@ static void imx06a_pd_geom(const struct imx06a_mode *mode, struct imx06a_pd_geom
 	g->rows = DIV_ROUND_UP(mode->height, IMX06A_PD_LINE_GROUP);
 	g->pkts = 1;
 	g->phase_pix = true;
+}
+
+static void imx06a_fill_pd_fmt(const struct imx06a_mode *mode,
+			       struct v4l2_mbus_framefmt *fmt)
+{
+	struct imx06a_pd_geom pd;
+
+	imx06a_pd_geom(mode, &pd);
+	fmt->code = MEDIA_BUS_FMT_SENSOR_DATA;
+	fmt->width = pd_standin ? IMX06A_PD_STANDIN_WIDTH :
+				  pd.px * IMX06A_PD_BPP / 8;
+	fmt->height = pd_standin ? 1 : pd.rows;
+	fmt->field = V4L2_FIELD_NONE;
+	fmt->colorspace = V4L2_COLORSPACE_RAW;
+	fmt->ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
+	fmt->quantization = V4L2_QUANTIZATION_DEFAULT;
+	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
+}
+
+/* Point a pad state at a mode: image format and crop, and the PD pad if any. */
+static void imx06a_state_set_mode(const struct imx06a *imx06a,
+				  struct v4l2_subdev_state *state,
+				  const struct imx06a_mode *mode)
+{
+	imx06a_fill_fmt(imx06a, mode,
+			v4l2_subdev_state_get_format(state, IMX06A_PAD_IMAGE));
+	*v4l2_subdev_state_get_crop(state, IMX06A_PAD_IMAGE) = imx06a_mode_crop(mode);
+	if (imx06a->pdaf)
+		imx06a_fill_pd_fmt(mode, v4l2_subdev_state_get_format(state, IMX06A_PAD_PD));
 }
 
 /* --------------------------------------------------------------------------
@@ -1609,12 +1620,16 @@ static int imx06a_enum_frame_size(struct v4l2_subdev *sd,
 	u32 base;
 
 	if (fse->pad == IMX06A_PAD_PD) {
+		const struct v4l2_mbus_framefmt *pd;
+
 		if (fse->index || fse->code != MEDIA_BUS_FMT_SENSOR_DATA)
 			return -EINVAL;
-		fse->min_width = IMX06A_PD_PAD_WIDTH;
-		fse->max_width = IMX06A_PD_PAD_WIDTH;
-		fse->min_height = 1;
-		fse->max_height = 1;
+		/* The PD size follows the image mode. */
+		pd = v4l2_subdev_state_get_format(state, IMX06A_PAD_PD);
+		fse->min_width = pd->width;
+		fse->max_width = pd->width;
+		fse->min_height = pd->height;
+		fse->max_height = pd->height;
 		return 0;
 	}
 

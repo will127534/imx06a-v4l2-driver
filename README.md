@@ -275,14 +275,15 @@ dtoverlay=imx06a,pdaf          # or: modprobe imx06a pdaf=1
   changes (single pad, 0x3104 = 0, same line lengths).
 * **V4L2**: a second source pad (`MEDIA_BUS_FMT_SENSOR_DATA`) that the RP1 CFE
   links to its CSI-2 channel 1 "embedded" node; `get_frame_desc` reports DT 0x30.
-  The pad is advertised at the CFE's default **16384 × 1** in every mode (as the
-  imx700 driver does) rather than the true size: the sensor→CSI-2 link is
-  immutable and validated on every stream start, and libcamera does not set the
-  CSI-2 meta pads for a sensor without embedded-data parsing, so a per-mode size
-  would break every libcamera stream. The pad only bounds the receiver's link
-  check. The CFE stores all DT 0x30 bytes up to the meta buffer size, which
-  the PD consumer sets to the size in the table above. libcamera
-  (`rpicam-still/vid`) works unchanged with `pdaf` on; it ignores the PD stream.
+  The pad reports the **true PD size** of the mode: width = bytes per packet,
+  height = packets per frame (e.g. binned 4:3 5120 × 768). The sensor→CSI-2 link
+  is immutable and validated on every stream start, so the consumer must set the
+  CSI-2 metadata pads to the same size: libcamera does when its IMX06A helper
+  uses the PD data (the `imx06a-pdaf` libcamera branch). A libcamera **without** PD
+  support leaves those pads at their default and stream start fails (EPIPE);
+  load the module with `pd_standin=1` to advertise the CFE's default 16384 × 1
+  instead (the receiver then stores DT 0x30 data up to the meta buffer size its
+  consumer sets), or load without `pdaf`.
 * **Reading it**: capture the image node (`rp1-cfe-csi2_ch0`) and the embedded node
   together, with the embedded node's meta buffer set to the PD size above, then split
   the RAW10 rows into the L and R planes.
@@ -354,6 +355,8 @@ slots), e.g. `gpo=1 testout=2` = exposure strobe on GPO, V sync on TESTOUT.
   every device (see Phase-detect output). Per device, the overlay's `pdaf` does
   the same. Pads are fixed at probe; an overlay reload without `pdaf` drops the
   PD pad again even with the module still loaded.
+* `pd_standin` (bool, load-time): advertise the PD pad at a fixed 16384 × 1
+  instead of the true size, for a libcamera without PD support.
 * `pd_dt`, `pd_vc`: bring-up aid, the data type / virtual channel the PD pad
   asks the receiver to capture (default 0x30 / 0; e.g. `pd_dt=0x12` captures the
   embedded data instead).
